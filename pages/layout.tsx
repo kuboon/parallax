@@ -35,7 +35,7 @@ export async function renderPage(props: LayoutProps): Promise<string> {
   const home = base === "" ? "/" : base;
 
   const html = await renderToString(
-    <html lang="en">
+    <html lang="ja">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -48,15 +48,18 @@ export async function renderPage(props: LayoutProps): Promise<string> {
       </head>
       <body>
         <header class="site-header">
-          <Link class="brand" href={home}>remix-ssg</Link>
+          <Link class="brand" href={home}>parallax</Link>
           <nav class="site-nav">
-            <Link href={home}>Home</Link>
-            <Link href={`${base}/about`}>About</Link>
-            <Link href={`${base}/blog`}>Blog</Link>
+            <Link href={home}>シミュレータ</Link>
+            <Link href={`${base}/how-it-works`}>仕組み</Link>
+            <a href="https://github.com/kuboon/parallax">GitHub</a>
           </nav>
         </header>
         <main class="site-main">{props.children}</main>
         <footer class="site-footer">
+          <p>
+            画像はブラウザの外に出ません。すべてこのページの中で処理しています。
+          </p>
           <p>
             Built with{" "}
             <a href="https://jsr.io/@kuboon/remix-ssg">@kuboon/remix-ssg</a> and

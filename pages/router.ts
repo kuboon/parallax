@@ -2,7 +2,7 @@
  * The site, wired by hand.
  *
  * Three directories become one handler: `islands/` compiled as a single code-split bundle,
- * `pages/` served through this site's own transforms, `static/` served verbatim.
+ * `pages/` served through this site's own transform, `static/` served verbatim.
  *
  * `deno serve router.ts` runs it as the dev server; the build crawls the same object. Nothing here
  * is a framework convention — the directory names, the transforms and the deploy rules are all
@@ -19,7 +19,6 @@ import {
 import type { FileServerBehavior } from "@kuboon/remix-ssg/site";
 
 import { base } from "./lib/base.ts";
-import { markdown } from "./transforms/markdown.tsx";
 import { page } from "./transforms/page.tsx";
 
 /** Deploy path prefix. The build strips it back off when writing, so output lands at the root. */
@@ -49,10 +48,7 @@ export default serveAsHost(
     await createFileTree({
       rootDir: "pages",
       basePath: base,
-      transforms: [
-        markdown({ base }),
-        page({ base, islandUrls: islands.urls }),
-      ],
+      transforms: [page({ base, islandUrls: islands.urls })],
     }),
     await createFileTree({
       rootDir: "static",
