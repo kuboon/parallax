@@ -42,9 +42,9 @@ export interface DepthMapMeta {
   mime: "image/png" | "image/jpeg";
   /** How byte values map onto distance. */
   format?: DepthFormat;
-  /** Distance of the nearest surface, in the same arbitrary units as `far`. */
+  /** Distance of the nearest surface, in metres. */
   near?: number;
-  /** Distance of the farthest surface. */
+  /** Distance of the farthest surface, in metres. */
   far?: number;
 }
 
@@ -77,8 +77,10 @@ export function embedDepthMap(
 /** The standard XMP packet: everything about the depth map except the map. */
 function standardPacket(meta: DepthMapMeta, guid: string): string {
   const format = meta.format ?? "RangeLinear";
-  const near = meta.near ?? 0;
-  const far = meta.far ?? 1;
+  // A plausible near-to-far span in metres. Zero is not one: a reader that turns these into
+  // distances has a degenerate range to work with, and `RangeInverse` divides by it outright.
+  const near = meta.near ?? 0.1;
+  const far = meta.far ?? 10;
 
   return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">

@@ -70,6 +70,26 @@ export function interlace(
 }
 
 /**
+ * Expands a per-column depth profile into one luminance byte per pixel.
+ *
+ * This is the depth map as a depth map — a single channel, which is what the file written for a
+ * viewer should carry. {@link depthImage} is the RGBA sibling, for putting on a canvas.
+ *
+ * @param profile One depth byte per column
+ * @param height Image height in pixels
+ * @returns A new buffer of `profile.length * height` bytes
+ */
+export function depthGrey(
+  profile: Uint8Array,
+  height: number,
+): Uint8Array {
+  const width = profile.length;
+  const out = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) out.set(profile, y * width);
+  return out;
+}
+
+/**
  * Expands a per-column depth profile into a greyscale RGBA image.
  *
  * @param profile One depth byte per column

@@ -49,6 +49,17 @@ export interface Pattern {
   invert: boolean;
   /** Swaps which image lands on the flank that widens first. */
   swap: boolean;
+  /**
+   * Replaces the zigzag with one smooth ramp across the whole image.
+   *
+   * This deliberately throws the effect away: a single gradient stretches the frame and nothing
+   * else, so no strip ever closes up. It is here to separate two failures that look the same from
+   * the outside. A viewer that refuses the pair can be refusing the *files* — the encoding, the
+   * metadata, the dimensions — or it can be refusing this particular depth *content*, which is
+   * nothing a camera would ever produce. Ship the same colour image with an ordinary-looking
+   * gradient instead: if that is accepted, the files are fine and the zigzag is the problem.
+   */
+  diagnostic: boolean;
 }
 
 /** A sensible starting point: strips coarse enough to survive re-encoding, full depth range. */
@@ -59,6 +70,7 @@ export const DEFAULT_PATTERN: Pattern = {
   contrast: 1,
   invert: false,
   swap: false,
+  diagnostic: false,
 };
 
 /** Position within the strip pair, always in `[0, period)`. */
@@ -121,11 +133,11 @@ function rawDepth(x: number, pattern: Pattern): number {
 export function depthProfile(width: number, pattern: Pattern): Uint8Array {
   const profile = new Uint8Array(width);
   const contrast = clamp(pattern.contrast, 0, 1);
+  const span = Math.max(1, width - 1);
 
   for (let x = 0; x < width; x++) {
-    const raw = pattern.invert
-      ? 1 - rawDepth(x, pattern)
-      : rawDepth(x, pattern);
+    const unit = pattern.diagnostic ? x / span : rawDepth(x, pattern);
+    const raw = pattern.invert ? 1 - unit : unit;
     profile[x] = Math.round(255 * (0.5 + (raw - 0.5) * contrast));
   }
 
