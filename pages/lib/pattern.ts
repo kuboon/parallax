@@ -53,11 +53,10 @@ export interface Pattern {
    * Replaces the zigzag with one smooth ramp across the whole image.
    *
    * This deliberately throws the effect away: a single gradient stretches the frame and nothing
-   * else, so no strip ever closes up. It is here to separate two failures that look the same from
-   * the outside. A viewer that refuses the pair can be refusing the *files* — the encoding, the
-   * metadata, the dimensions — or it can be refusing this particular depth *content*, which is
-   * nothing a camera would ever produce. Ship the same colour image with an ordinary-looking
-   * gradient instead: if that is accepted, the files are fine and the zigzag is the problem.
+   * else, so no strip ever closes up. It exists to take the depth map out of the list of suspects
+   * when a viewer refuses the pair — it is nothing a camera would ever produce, and that alone is
+   * grounds for something downstream to balk. Derived from the diagnostic level the UI offers
+   * rather than set directly; see `DiagnosticLevel` in `islands/pipeline.ts`.
    */
   diagnostic: boolean;
 }

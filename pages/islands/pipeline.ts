@@ -15,6 +15,30 @@ import { applyColumnMapping, blurProfile, columnMapping } from "../lib/warp.ts";
 import { asImageData, fitToFrame, paint, releaseSource } from "./imaging.ts";
 import type { Source } from "./imaging.ts";
 
+/**
+ * How much of the tool's strangeness to strip out before shipping.
+ *
+ * The output is two unusual things at once: a colour image that is nothing but vertical stripes,
+ * and a depth map that is a repeating zigzag. When something downstream refuses the pair, all it
+ * says is that it refused; it does not say which half offended, or whether either did. These are
+ * the rungs of a ladder that takes them away one at a time.
+ *
+ * - `off` — the real thing.
+ * - `depth` — striped image, ordinary gradient depth map. Clears the depth map of suspicion.
+ * - `both` — the first image untouched, ordinary gradient depth map. There is nothing left of this
+ *   tool in the result except the encoder and the file names: a plain photograph and the sort of
+ *   depth map anything would accept. If *this* is refused, the refusal is not about anything we
+ *   generated.
+ */
+export type DiagnosticLevel = "off" | "depth" | "both";
+
+/** The rungs, in the order the UI offers them. */
+export const DIAGNOSTIC_LEVELS: readonly DiagnosticLevel[] = [
+  "off",
+  "depth",
+  "both",
+];
+
 /** Everything the UI can set. */
 export interface Settings {
   /** How the two images are cut and how deep the map claims they are. */
@@ -27,6 +51,8 @@ export interface Settings {
   view: number;
   /** How much the simulated viewer smooths the depth map before using it. */
   depthBlur: number;
+  /** How much of the tool's own output to leave in, when working out what is being refused. */
+  diagnostic: DiagnosticLevel;
   /** Stem for the downloaded file names. */
   baseName: string;
   /** Encoding for the separate depth map file. */
@@ -117,19 +143,26 @@ export class Pipeline {
       Math.round((width * a.image.height) / a.image.width),
     );
 
-    const colour = asImageData(
+    // The depth flag is derived, so the two halves of the ladder can never disagree.
+    const pattern = {
+      ...settings.pattern,
+      diagnostic: settings.diagnostic !== "off",
+    };
+
+    const plate = fitToFrame(a.image, width, height);
+    const colour = settings.diagnostic === "both" ? plate : asImageData(
       interlace(
-        fitToFrame(a.image, width, height).data,
+        plate.data,
         fitToFrame(b.image, width, height).data,
         width,
         height,
-        settings.pattern,
+        pattern,
       ),
       width,
       height,
     );
 
-    this.#profile = depthProfile(width, settings.pattern);
+    this.#profile = depthProfile(width, pattern);
     this.#output = {
       width,
       height,
