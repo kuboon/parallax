@@ -76,3 +76,20 @@ Deno.test("the matched shift scales with strip width and contrast", () => {
     0.001,
   );
 });
+
+Deno.test("the diagnostic mode replaces the zigzag with one ramp across the image", () => {
+  const profile = depthProfile(9, pattern({ diagnostic: true }));
+
+  assertEquals(profile[0], 0);
+  assertEquals(profile[8], 255);
+  // Strictly rising: nothing repeats, so nothing can close a strip up.
+  for (let x = 1; x < profile.length; x++) {
+    assertEquals(profile[x] > profile[x - 1], true, `column ${x} did not rise`);
+  }
+});
+
+Deno.test("the diagnostic mode leaves the strip cut alone", () => {
+  const p = pattern({ diagnostic: true });
+  const sources = Array.from({ length: 12 }, (_, x) => stripSource(x, p));
+  assertEquals(sources, [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0]);
+});

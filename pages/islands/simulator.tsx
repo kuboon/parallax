@@ -16,6 +16,7 @@ import type { Handle } from "remix/ui";
 import { island } from "@kuboon/remix-ssg/client";
 
 import { embedDepthMap } from "../lib/jpeg-xmp.ts";
+import { encodeGreyscalePng } from "../lib/png.ts";
 import {
   clamp,
   CLEAN_SHIFT_FACTOR,
@@ -24,6 +25,7 @@ import {
 } from "../lib/pattern.ts";
 import type { Waveform } from "../lib/pattern.ts";
 
+import type { Encoded } from "./imaging.ts";
 import {
   download,
   encode,
@@ -33,7 +35,7 @@ import {
   sourceFromPixels,
 } from "./imaging.ts";
 import { MAX_OUTPUT_WIDTH, MIN_STRIP_WIDTH, Pipeline } from "./pipeline.ts";
-import type { Settings } from "./pipeline.ts";
+import type { Output, Settings } from "./pipeline.ts";
 
 /** Japanese labels for the waveforms, in the order `WAVEFORMS` lists them. */
 const WAVEFORM_LABELS: Record<Waveform, string> = {
@@ -70,6 +72,7 @@ export const Simulator = island(
         contrast: 1,
         invert: false,
         swap: false,
+        diagnostic: false,
       },
       outputWidth: 1200,
       gain: 8 * CLEAN_SHIFT_FACTOR,
@@ -180,6 +183,28 @@ export const Simulator = island(
       say("サンプル画像を読み込みました。");
     }
 
+    /**
+     * Encodes the depth map.
+     *
+     * PNG goes through this project's own writer rather than the canvas, because a canvas only
+     * emits RGBA: three copies of the same number plus an alpha channel nobody asked for. A depth
+     * map is one channel, and a reader that checks is entitled to say so.
+     */
+    async function encodeDepth(output: Output): Promise<Encoded> {
+      if (settings.depthType === "image/jpeg") {
+        return await encode(output.depth, "image/jpeg");
+      }
+
+      return {
+        bytes: await encodeGreyscalePng(
+          output.grey,
+          output.width,
+          output.height,
+        ),
+        type: "image/png",
+      };
+    }
+
     /** Writes out the colour image and the depth map as two files. */
     async function downloadPair(): Promise<void> {
       const output = pipeline.output;
@@ -189,7 +214,7 @@ export const Simulator = island(
       say("書き出しています…");
       try {
         const colour = await encode(output.colour, "image/jpeg");
-        const depth = await encode(output.depth, settings.depthType);
+        const depth = await encodeDepth(output);
         const suffix = settings.depthType === "image/png" ? "png" : "jpg";
 
         download(colour.bytes, colour.type, `${settings.baseName}.jpg`);
@@ -220,7 +245,7 @@ export const Simulator = island(
       say("深度マップを埋め込んでいます…");
       try {
         const colour = await encode(output.colour, "image/jpeg");
-        const depth = await encode(output.depth, settings.depthType);
+        const depth = await encodeDepth(output);
         const bytes = embedDepthMap(colour.bytes, depth.bytes, {
           mime: depth.type,
         });
@@ -466,6 +491,32 @@ export const Simulator = island(
               />
               <span>深度を反転（白が手前 ⇄ 黒が手前）</span>
             </label>
+            <label class="choice">
+              <input
+                type="checkbox"
+                defaultChecked={settings.pattern.diagnostic}
+                mix={[on("change", (event) => {
+                  settings.pattern.diagnostic = checkedFrom(event);
+                  invalidate();
+                  handle.update();
+                })]}
+              />
+              <span>
+                診断モード:
+                深度マップを全面のなだらかな勾配にする（効果は出ません）
+              </span>
+            </label>
+            {settings.pattern.diagnostic
+              ? (
+                <p class="field-note">
+                  ストライプはそのまま、深度マップだけを「ありふれた深度マップ」に差し替えます。
+                  投稿が失敗したときに、<strong>
+                    ファイルが拒否されているのか、ジグザグの中身が拒否されているのか
+                  </strong>
+                  を切り分けるためのものです。これが通ればファイル形式は問題なく、通らなければ形式の側を疑うことになります。
+                </p>
+              )
+              : null}
           </section>
 
           <section class="panel">

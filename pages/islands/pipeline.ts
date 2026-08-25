@@ -7,7 +7,7 @@
  * result until something upstream of it changes.
  */
 
-import { depthImage, interlace } from "../lib/interlace.ts";
+import { depthGrey, depthImage, interlace } from "../lib/interlace.ts";
 import { clamp, depthProfile } from "../lib/pattern.ts";
 import type { Pattern } from "../lib/pattern.ts";
 import { applyColumnMapping, blurProfile, columnMapping } from "../lib/warp.ts";
@@ -45,8 +45,10 @@ export interface Output {
   readonly height: number;
   /** The interlaced colour image. */
   readonly colour: ImageData;
-  /** The zigzag, as a greyscale image. */
+  /** The zigzag, as a greyscale image for the screen. */
   readonly depth: ImageData;
+  /** The same map as one luminance byte per pixel, which is what gets written to a file. */
+  readonly grey: Uint8Array;
 }
 
 /**
@@ -133,6 +135,7 @@ export class Pipeline {
       height,
       colour,
       depth: asImageData(depthImage(this.#profile, height), width, height),
+      grey: depthGrey(this.#profile, height),
     };
     this.#frame = new ImageData(width, height);
     this.#blurred = null;
