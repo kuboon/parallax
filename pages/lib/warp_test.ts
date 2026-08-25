@@ -143,10 +143,18 @@ Deno.test("the mapping paints whole pixels through", () => {
 });
 
 Deno.test("blurring flattens the pattern towards mid grey", () => {
-  const profile = depthProfile(64, pattern());
+  const p = pattern();
+  const period = p.stripWidth * 2;
+  const profile = depthProfile(period * 8, p);
   assertEquals([...blurProfile(profile, 0)], [...profile]);
 
-  for (const value of blurProfile(profile, 8).slice(16, 48)) {
+  // A window as wide as a strip averages a full flank away; the edges are left out, where the
+  // clamped window is still looking at one side of the pattern.
+  const blurred = blurProfile(profile, p.stripWidth).slice(
+    period * 2,
+    -period * 2,
+  );
+  for (const value of blurred) {
     assertEquals(
       Math.abs(value - 128) < 16,
       true,
