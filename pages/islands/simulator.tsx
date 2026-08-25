@@ -20,6 +20,7 @@ import { encodeGreyscalePng } from "../lib/png.ts";
 import {
   clamp,
   CLEAN_SHIFT_FACTOR,
+  DEFAULT_PATTERN,
   matchedShift,
   WAVEFORMS,
 } from "../lib/pattern.ts";
@@ -65,17 +66,10 @@ export const Simulator = island(
     const pipeline = new Pipeline();
 
     const settings: Settings = {
-      pattern: {
-        stripWidth: 8,
-        waveform: "triangle",
-        phase: 0,
-        contrast: 1,
-        invert: false,
-        swap: false,
-        diagnostic: false,
-      },
+      // A copy, not the shared object: the controls below write straight into it.
+      pattern: { ...DEFAULT_PATTERN },
       outputWidth: 1200,
-      gain: 8 * CLEAN_SHIFT_FACTOR,
+      gain: Math.round(matchedShift(DEFAULT_PATTERN) * CLEAN_SHIFT_FACTOR),
       view: 0,
       depthBlur: 0,
       baseName: "parallax",

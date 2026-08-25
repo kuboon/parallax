@@ -62,9 +62,16 @@ export interface Pattern {
   diagnostic: boolean;
 }
 
-/** A sensible starting point: strips coarse enough to survive re-encoding, full depth range. */
+/**
+ * A sensible starting point.
+ *
+ * Sixteen pixels is wider than the effect needs and that is the point: the strips have to survive
+ * being downscaled and re-compressed by whatever they are uploaded to, and they are exactly the
+ * high frequencies that step throws away. A gentler ramp is also a less alarming thing to hand a
+ * depth reader. Go narrower once something has been seen to work, not before.
+ */
 export const DEFAULT_PATTERN: Pattern = {
-  stripWidth: 8,
+  stripWidth: 16,
   waveform: "triangle",
   phase: 0,
   contrast: 1,
