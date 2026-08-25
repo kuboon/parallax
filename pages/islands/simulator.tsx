@@ -380,7 +380,7 @@ export const Simulator = island(
                 <input
                   type="range"
                   min={String(MIN_STRIP_WIDTH)}
-                  max="48"
+                  max="96"
                   step="1"
                   defaultValue={String(settings.pattern.stripWidth)}
                   mix={[on("input", (event) => {
@@ -396,6 +396,29 @@ export const Simulator = island(
                 <p class="field-note">
                   細いほど画素の混ざりは目立ちませんが、Facebook
                   側の再エンコードで潰れやすくなります。
+                </p>
+              </div>
+
+              <div class="field">
+                <span class="field-label">
+                  境界のぼかし<output>{settings.pattern.feather} px</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="16"
+                  step="1"
+                  defaultValue={String(settings.pattern.feather)}
+                  mix={[on("input", (event) => {
+                    settings.pattern.feather = numberFrom(event);
+                    invalidate();
+                    handle.update();
+                  })]}
+                />
+                <p class="field-note">
+                  ストライプの継ぎ目を溶かします。合成画像から一定周期の縦エッジが消えるので、
+                  縞そのものを拒否している相手には効く見込みがあります。
+                  ただし溶けた列はどの角度でも半々のままなので、その分だけ混信が残ります。
                 </p>
               </div>
 

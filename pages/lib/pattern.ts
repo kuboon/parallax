@@ -50,6 +50,19 @@ export interface Pattern {
   /** Swaps which image lands on the flank that widens first. */
   swap: boolean;
   /**
+   * Width in pixels of the cross-fade at each strip boundary.
+   *
+   * A hard cut makes the colour image a field of vertical edges at one fixed frequency, which is
+   * not a thing photographs contain — and Facebook, which accepts this generator's files happily
+   * when the colour image is an ordinary photograph, refuses them when it is that. Fading between
+   * the two sources across the seam takes the edges out without changing the geometry.
+   *
+   * It is not free: a column that is half one image and half the other stays half-and-half at every
+   * viewing angle, so the fade is crosstalk that no shift can separate. Keep it small next to the
+   * strip width.
+   */
+  feather: number;
+  /**
    * Replaces the zigzag with one smooth ramp across the whole image.
    *
    * This deliberately throws the effect away: a single gradient stretches the frame and nothing
@@ -76,6 +89,7 @@ export const DEFAULT_PATTERN: Pattern = {
   contrast: 1,
   invert: false,
   swap: false,
+  feather: 0,
   diagnostic: false,
 };
 
@@ -98,6 +112,34 @@ function positionInPeriod(x: number, pattern: Pattern): number {
 export function stripSource(x: number, pattern: Pattern): 0 | 1 {
   const first = positionInPeriod(x, pattern) < pattern.stripWidth;
   return (first !== pattern.swap ? 0 : 1);
+}
+
+/**
+ * How much of image B a column shows, from `0` (all A) to `1` (all B).
+ *
+ * With no feather this is {@link stripSource} in another form. With one, the columns within half a
+ * feather of a seam are mixed, in proportion to how close they are to it — so both seams in a
+ * period fade the same way and the pattern stays continuous across the wrap.
+ *
+ * @param x Column index
+ * @param pattern The strip pattern
+ * @returns The blend weight for image B
+ */
+export function blendWeight(x: number, pattern: Pattern): number {
+  const hard = stripSource(x, pattern);
+  const feather = Math.max(0, pattern.feather);
+  if (feather === 0) return hard;
+
+  const period = pattern.stripWidth * 2;
+  const p = positionInPeriod(x, pattern) + 0.5;
+  // The seams are at 0, stripWidth and the period; a column is only ever near one of them.
+  const toSeam = Math.min(
+    Math.abs(p - pattern.stripWidth),
+    Math.min(p, period - p),
+  );
+  const away = clamp(toSeam / (feather / 2), 0, 1);
+
+  return 0.5 + (hard - 0.5) * away;
 }
 
 /**
