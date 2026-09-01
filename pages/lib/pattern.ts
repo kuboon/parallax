@@ -53,9 +53,10 @@ export interface Pattern {
    * Width in pixels of the cross-fade at each strip boundary.
    *
    * A hard cut makes the colour image a field of vertical edges at one fixed frequency, which is
-   * not a thing photographs contain — and Facebook, which accepts this generator's files happily
-   * when the colour image is an ordinary photograph, refuses them when it is that. Fading between
-   * the two sources across the seam takes the edges out without changing the geometry.
+   * not a thing photographs contain. That turned out not to be what anything objects to — the
+   * colour image is not examined at all, and a plain photograph with a zigzag depth map is refused
+   * exactly like a striped one — so this is now a cosmetic control: it takes the hard seams out of
+   * what a person sees when the parallax is not moving.
    *
    * It is not free: a column that is half one image and half the other stays half-and-half at every
    * viewing angle, so the fade is crosstalk that no shift can separate. Keep it small next to the
@@ -75,15 +76,99 @@ export interface Pattern {
 }
 
 /**
+ * Narrowest strip the warp resolves reliably on a pixel grid.
+ *
+ * Below this the fold between two strips lands inside a pixel and the simulated view stops being
+ * a fair picture of what a viewer would do with the file.
+ */
+export const MIN_STRIP_WIDTH = 4;
+
+/**
+ * The width a depth map keeps when it is uploaded, past which it is shrunk.
+ *
+ * Facebook re-encodes what it is given, and everything below is stated relative to this width
+ * because that is the space the check happens in: the same zigzag in a 2400 px map has to be
+ * twice as coarse to survive arriving as a 1200 px one. Measured, not documented anywhere.
+ */
+export const DEPTH_REFERENCE_WIDTH = 1200;
+
+/**
+ * The narrowest strip Facebook's 3D reader accepted, per waveform, at {@link DEPTH_REFERENCE_WIDTH}.
+ *
+ * Measured on 2026-09-01 by attaching pairs to the composer and reading whether it made a 3D photo:
+ * for each of these the value itself was accepted and the one pixel below it was refused, three
+ * times each. Only the depth map decides — the colour image can be a photograph or a field of hard
+ * stripes and it changes nothing — so these are properties of the zigzag alone.
+ *
+ * A square wave is not a zigzag at all: it has no ramp for the reader to object to and is taken at
+ * any width, which is also why it barely produces the effect. Everything else is refused with
+ * `Failed to create your 3D Photo` and no reason given.
+ */
+const ACCEPTED_STRIP_WIDTH: Record<Waveform, number> = {
+  triangle: 32,
+  sawtooth: 17,
+  sine: 44,
+  square: MIN_STRIP_WIDTH,
+};
+
+/**
+ * The narrowest strip that will come back as a 3D photo.
+ *
+ * The limit scales with the output width, because a wider image is shrunk to
+ * {@link DEPTH_REFERENCE_WIDTH} on the way in and takes its zigzag down with it. Verified at the
+ * boundary: 1300 px wide needs a 35 px strip where 1200 px needs 32, which is exactly this
+ * arithmetic.
+ *
+ * @param outputWidth Width of the generated image in pixels
+ * @param waveform Depth shape across a strip pair
+ * @returns The smallest strip width worth offering
+ */
+export function minimumStripWidth(
+  outputWidth: number,
+  waveform: Waveform,
+): number {
+  const scale = Math.max(1, outputWidth / DEPTH_REFERENCE_WIDTH);
+  return Math.max(
+    MIN_STRIP_WIDTH,
+    Math.ceil(ACCEPTED_STRIP_WIDTH[waveform] * scale),
+  );
+}
+
+/** Granularity the contrast is offered at, and so the distance to nudge off a refused value. */
+export const CONTRAST_STEP = 0.05;
+
+/** Shallowest depth range that still comes back as a 3D photo. Below this, 20% was refused. */
+export const MIN_CONTRAST = 0.3;
+
+/**
+ * The one contrast inside the accepted range that is refused anyway.
+ *
+ * Exactly one half. Both neighbours a step away are taken, and two separately generated files at
+ * this value were refused four times out of four. No idea; it is here so nothing offers it.
+ */
+export const REFUSED_CONTRAST = 0.5;
+
+/**
+ * The nearest contrast to `value` that Facebook will accept.
+ *
+ * @param value The contrast asked for
+ * @returns The same number, or the nearest one that is not refused
+ */
+export function acceptedContrast(value: number): number {
+  if (value <= MIN_CONTRAST) return MIN_CONTRAST;
+  if (value === REFUSED_CONTRAST) return REFUSED_CONTRAST + CONTRAST_STEP;
+  return value;
+}
+
+/**
  * A sensible starting point.
  *
- * Sixteen pixels is wider than the effect needs and that is the point: the strips have to survive
- * being downscaled and re-compressed by whatever they are uploaded to, and they are exactly the
- * high frequencies that step throws away. A gentler ramp is also a less alarming thing to hand a
- * depth reader. Go narrower once something has been seen to work, not before.
+ * Thirty-two pixels is the narrowest triangle Facebook will take at the default output width —
+ * see {@link minimumStripWidth}. It is wider than the effect needs and there is nothing to be
+ * done about that: below it the pair uploads fine and then comes back refused.
  */
 export const DEFAULT_PATTERN: Pattern = {
-  stripWidth: 16,
+  stripWidth: 32,
   waveform: "triangle",
   phase: 0,
   contrast: 1,

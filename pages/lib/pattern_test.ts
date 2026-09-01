@@ -1,10 +1,17 @@
 import { assertAlmostEquals, assertEquals } from "@std/assert";
 
 import {
+  acceptedContrast,
   blendWeight,
+  CONTRAST_STEP,
   DEFAULT_PATTERN,
+  DEPTH_REFERENCE_WIDTH,
   depthProfile,
   matchedShift,
+  MIN_CONTRAST,
+  MIN_STRIP_WIDTH,
+  minimumStripWidth,
+  REFUSED_CONTRAST,
   stripSource,
 } from "./pattern.ts";
 import type { Pattern } from "./pattern.ts";
@@ -132,4 +139,43 @@ Deno.test("a feather never crosses the middle", () => {
       );
     }
   }
+});
+
+Deno.test("the strip floor is what Facebook was measured to accept", () => {
+  // The two boundaries the measurement pinned down, one pixel apart each.
+  assertEquals(minimumStripWidth(1200, "triangle"), 32);
+  assertEquals(minimumStripWidth(1300, "triangle"), 35);
+
+  // Every waveform has its own, and a square wave has none worth the name.
+  assertEquals(minimumStripWidth(1200, "sawtooth"), 17);
+  assertEquals(minimumStripWidth(1200, "sine"), 44);
+  assertEquals(minimumStripWidth(1200, "square"), MIN_STRIP_WIDTH);
+});
+
+Deno.test("the strip floor rises with the width, and never falls below it", () => {
+  assertEquals(minimumStripWidth(2400, "triangle"), 64);
+  assertEquals(minimumStripWidth(400, "triangle"), 32);
+  assertEquals(minimumStripWidth(400, "square"), MIN_STRIP_WIDTH);
+});
+
+Deno.test("the default pattern is one Facebook accepts", () => {
+  assertEquals(
+    DEFAULT_PATTERN.stripWidth >=
+      minimumStripWidth(DEPTH_REFERENCE_WIDTH, DEFAULT_PATTERN.waveform),
+    true,
+  );
+  assertEquals(
+    acceptedContrast(DEFAULT_PATTERN.contrast),
+    DEFAULT_PATTERN.contrast,
+  );
+});
+
+Deno.test("acceptedContrast steps off the value that is refused", () => {
+  assertEquals(
+    acceptedContrast(REFUSED_CONTRAST),
+    REFUSED_CONTRAST + CONTRAST_STEP,
+  );
+  assertEquals(acceptedContrast(0.45), 0.45);
+  assertEquals(acceptedContrast(0.55), 0.55);
+  assertEquals(acceptedContrast(0.1), MIN_CONTRAST);
 });

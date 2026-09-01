@@ -2,8 +2,9 @@
   "tasks": {
     "dev": "deno serve -P=dev --watch --port 8000 router.ts",
     "build": "deno run -c deno.json -P=build jsr:@kuboon/remix-ssg/build.ts",
-    "test": "deno test -P=test lib",
-    "check": "deno check router.ts layout.tsx islands lib pages transforms && deno lint && deno fmt --check && deno test -P=test lib"
+    "test": "deno test -P=test lib cli_test.ts",
+    "gen": "deno run -c deno.json -P=gen cli.ts",
+    "check": "deno check cli.ts router.ts layout.tsx islands lib pages transforms && deno lint && deno fmt --check && deno test -P=test lib cli_test.ts"
   },
   "nodeModulesDir": "auto",
   "unstable": ["bundle"],
@@ -29,6 +30,11 @@
     "test": {
       "read": ["."],
       "import": true
+    },
+    "gen": {
+      "read": ["."],
+      "write": ["."],
+      "import": true
     }
   },
   "minimumDependencyAge": {
@@ -43,7 +49,8 @@
   "imports": {
     "remix": "npm:remix@3.0.0-beta.5",
     "@kuboon/remix-ssg": "jsr:@kuboon/remix-ssg@^0.5.2",
-    "@std/assert": "jsr:@std/assert@^1.0.14"
+    "@std/assert": "jsr:@std/assert@^1.0.14",
+    "jpeg-js": "npm:jpeg-js@^0.4.4"
   },
   "fmt": {
     "exclude": ["dist", "node_modules"]
