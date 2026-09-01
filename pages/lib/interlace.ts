@@ -6,7 +6,7 @@
  * the cut and the depth map can never drift apart.
  */
 
-import { stripSource } from "./pattern.ts";
+import { blendWeight } from "./pattern.ts";
 import type { Pattern } from "./pattern.ts";
 
 /**
@@ -55,14 +55,29 @@ export function interlace(
   const source = [pixelView(a), pixelView(b)];
   const target = new Uint32Array(out.buffer);
 
-  // The pattern repeats every column, so decide the source once per column and reuse it per row.
-  const from = new Uint8Array(width);
-  for (let x = 0; x < width; x++) from[x] = stripSource(x, pattern);
+  // The pattern repeats every column, so decide the mix once per column and reuse it for every row.
+  // As a 0-256 integer, so the common columns — the ones a feather does not reach — are exactly 0
+  // or 256 and take the whole-pixel copy instead of four multiplications.
+  const mix = new Uint16Array(width);
+  for (let x = 0; x < width; x++) {
+    mix[x] = Math.round(blendWeight(x, pattern) * 256);
+  }
 
   for (let y = 0; y < height; y++) {
     const row = y * width;
     for (let x = 0; x < width; x++) {
-      target[row + x] = source[from[x]][row + x];
+      const weight = mix[x];
+      if (weight === 0) {
+        target[row + x] = source[0][row + x];
+      } else if (weight === 256) {
+        target[row + x] = source[1][row + x];
+      } else {
+        const at = (row + x) * 4;
+        for (let channel = 0; channel < 4; channel++) {
+          out[at + channel] =
+            (a[at + channel] * (256 - weight) + b[at + channel] * weight) >> 8;
+        }
+      }
     }
   }
 

@@ -35,8 +35,13 @@ import {
   sampleImages,
   sourceFromPixels,
 } from "./imaging.ts";
-import { MAX_OUTPUT_WIDTH, MIN_STRIP_WIDTH, Pipeline } from "./pipeline.ts";
-import type { Output, Settings } from "./pipeline.ts";
+import {
+  DIAGNOSTIC_LEVELS,
+  MAX_OUTPUT_WIDTH,
+  MIN_STRIP_WIDTH,
+  Pipeline,
+} from "./pipeline.ts";
+import type { DiagnosticLevel, Output, Settings } from "./pipeline.ts";
 
 /** Japanese labels for the waveforms, in the order `WAVEFORMS` lists them. */
 const WAVEFORM_LABELS: Record<Waveform, string> = {
@@ -44,6 +49,24 @@ const WAVEFORM_LABELS: Record<Waveform, string> = {
   sawtooth: "のこぎり波",
   square: "矩形波",
   sine: "正弦波",
+};
+
+/** What each rung of the diagnostic ladder is called. */
+const DIAGNOSTIC_LABELS: Record<DiagnosticLevel, string> = {
+  off: "オフ（本来の出力）",
+  depth: "深度だけ平凡に",
+  both: "画像も深度も平凡に",
+};
+
+/** What each rung tells you, if the upload is refused anyway. */
+const DIAGNOSTIC_NOTES: Record<DiagnosticLevel, string> = {
+  off: "縞の合成画像とジグザグの深度マップ。狙っているものです。",
+  depth:
+    "縞はそのまま、深度マップだけをありふれた勾配に差し替えます。効果は出ません。" +
+    "これが通れば、拒否されていたのは深度の中身です。",
+  both: "画像 A をそのまま使い、深度マップも勾配にします。" +
+    "普通の写真と、何にでも通るはずの深度マップ。ここまで平凡にしても拒否されるなら、" +
+    "拒否の理由はこのツールが作ったものの側にはありません。",
 };
 
 /** How long one back-and-forth sweep takes while the view is animating, in milliseconds. */
@@ -69,6 +92,7 @@ export const Simulator = island(
       // A copy, not the shared object: the controls below write straight into it.
       pattern: { ...DEFAULT_PATTERN },
       outputWidth: 1200,
+      diagnostic: "off",
       gain: Math.round(matchedShift(DEFAULT_PATTERN) * CLEAN_SHIFT_FACTOR),
       view: 0,
       depthBlur: 0,
@@ -356,7 +380,7 @@ export const Simulator = island(
                 <input
                   type="range"
                   min={String(MIN_STRIP_WIDTH)}
-                  max="48"
+                  max="96"
                   step="1"
                   defaultValue={String(settings.pattern.stripWidth)}
                   mix={[on("input", (event) => {
@@ -372,6 +396,29 @@ export const Simulator = island(
                 <p class="field-note">
                   細いほど画素の混ざりは目立ちませんが、Facebook
                   側の再エンコードで潰れやすくなります。
+                </p>
+              </div>
+
+              <div class="field">
+                <span class="field-label">
+                  境界のぼかし<output>{settings.pattern.feather} px</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="16"
+                  step="1"
+                  defaultValue={String(settings.pattern.feather)}
+                  mix={[on("input", (event) => {
+                    settings.pattern.feather = numberFrom(event);
+                    invalidate();
+                    handle.update();
+                  })]}
+                />
+                <p class="field-note">
+                  ストライプの継ぎ目を溶かします。合成画像から一定周期の縦エッジが消えるので、
+                  縞そのものを拒否している相手には効く見込みがあります。
+                  ただし溶けた列はどの角度でも半々のままなので、その分だけ混信が残ります。
                 </p>
               </div>
 
@@ -485,32 +532,28 @@ export const Simulator = island(
               />
               <span>深度を反転（白が手前 ⇄ 黒が手前）</span>
             </label>
-            <label class="choice">
-              <input
-                type="checkbox"
-                defaultChecked={settings.pattern.diagnostic}
-                mix={[on("change", (event) => {
-                  settings.pattern.diagnostic = checkedFrom(event);
-                  invalidate();
-                  handle.update();
-                })]}
-              />
-              <span>
-                診断モード:
-                深度マップを全面のなだらかな勾配にする（効果は出ません）
-              </span>
-            </label>
-            {settings.pattern.diagnostic
-              ? (
-                <p class="field-note">
-                  ストライプはそのまま、深度マップだけを「ありふれた深度マップ」に差し替えます。
-                  投稿が失敗したときに、<strong>
-                    ファイルが拒否されているのか、ジグザグの中身が拒否されているのか
-                  </strong>
-                  を切り分けるためのものです。これが通ればファイル形式は問題なく、通らなければ形式の側を疑うことになります。
-                </p>
-              )
-              : null}
+            <div class="field">
+              <span class="field-label">診断モード（切り分け用）</span>
+              <div class="choices">
+                {DIAGNOSTIC_LEVELS.map((level) => (
+                  <label key={level} class="choice">
+                    <input
+                      type="radio"
+                      name="diagnostic"
+                      value={level}
+                      defaultChecked={settings.diagnostic === level}
+                      mix={[on("change", () => {
+                        settings.diagnostic = level;
+                        invalidate();
+                        handle.update();
+                      })]}
+                    />
+                    <span>{DIAGNOSTIC_LABELS[level]}</span>
+                  </label>
+                ))}
+              </div>
+              <p class="field-note">{DIAGNOSTIC_NOTES[settings.diagnostic]}</p>
+            </div>
           </section>
 
           <section class="panel">
