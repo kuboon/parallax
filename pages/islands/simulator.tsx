@@ -18,13 +18,20 @@ import { island } from "@kuboon/remix-ssg/client";
 import { embedDepthMap } from "../lib/jpeg-xmp.ts";
 import { encodeGreyscalePng } from "../lib/png.ts";
 import {
+  acceptedContrast,
   clamp,
   CLEAN_SHIFT_FACTOR,
+  CONTRAST_STEP,
   DEFAULT_PATTERN,
+  DEPTH_REFERENCE_WIDTH,
   matchedShift,
+  MIN_CONTRAST,
+  minimumStripWidth,
+  REFUSED_CONTRAST,
   WAVEFORMS,
 } from "../lib/pattern.ts";
 import type { Waveform } from "../lib/pattern.ts";
+import { sampleImages } from "../lib/samples.ts";
 
 import type { Encoded } from "./imaging.ts";
 import {
@@ -32,15 +39,9 @@ import {
   encode,
   loadSource,
   paint,
-  sampleImages,
   sourceFromPixels,
 } from "./imaging.ts";
-import {
-  DIAGNOSTIC_LEVELS,
-  MAX_OUTPUT_WIDTH,
-  MIN_STRIP_WIDTH,
-  Pipeline,
-} from "./pipeline.ts";
+import { DIAGNOSTIC_LEVELS, MAX_OUTPUT_WIDTH, Pipeline } from "./pipeline.ts";
 import type { DiagnosticLevel, Output, Settings } from "./pipeline.ts";
 
 /** Japanese labels for the waveforms, in the order `WAVEFORMS` lists them. */
@@ -63,7 +64,7 @@ const DIAGNOSTIC_NOTES: Record<DiagnosticLevel, string> = {
   off: "縞の合成画像とジグザグの深度マップ。狙っているものです。",
   depth:
     "縞はそのまま、深度マップだけをありふれた勾配に差し替えます。効果は出ません。" +
-    "これが通れば、拒否されていたのは深度の中身です。",
+    "これは必ず通るので、拒否されたときに深度マップ以外を疑うための基準になります。",
   both: "画像 A をそのまま使い、深度マップも勾配にします。" +
     "普通の写真と、何にでも通るはずの深度マップ。ここまで平凡にしても拒否されるなら、" +
     "拒否の理由はこのツールが作ったものの側にはありません。",
@@ -113,10 +114,38 @@ export const Simulator = island(
     let depthCanvas: HTMLCanvasElement | undefined;
     let viewSlider: HTMLInputElement | undefined;
     let gainSlider: HTMLInputElement | undefined;
+    let stripSlider: HTMLInputElement | undefined;
+    let contrastSlider: HTMLInputElement | undefined;
 
     /** The gain at which the strips close up cleanly, given the current pattern. */
     function suggestedGain(): number {
       return Math.round(matchedShift(settings.pattern) * CLEAN_SHIFT_FACTOR);
+    }
+
+    /** The narrowest strip Facebook will take, for whatever the other settings now are. */
+    function stripFloor(): number {
+      return minimumStripWidth(settings.outputWidth, settings.pattern.waveform);
+    }
+
+    /**
+     * Raises the strip width to the floor when something else has pushed the floor above it.
+     *
+     * The output width and the waveform both move it, and a pair below the floor is not a worse
+     * pair — it is one Facebook refuses outright, so there is nothing to be gained by leaving it
+     * reachable.
+     */
+    function applyStripFloor(): void {
+      const floor = stripFloor();
+      if (settings.pattern.stripWidth >= floor) return;
+
+      settings.pattern.stripWidth = floor;
+      if (stripSlider !== undefined) stripSlider.value = String(floor);
+    }
+
+    /** Moves the gain to the value the current pattern wants, slider and all. */
+    function retune(): void {
+      settings.gain = suggestedGain();
+      if (gainSlider !== undefined) gainSlider.value = String(settings.gain);
     }
 
     /** Re-cuts the strips and redraws everything, on the next frame. */
@@ -379,23 +408,30 @@ export const Simulator = island(
                 </span>
                 <input
                   type="range"
-                  min={String(MIN_STRIP_WIDTH)}
+                  min={String(stripFloor())}
                   max="96"
                   step="1"
                   defaultValue={String(settings.pattern.stripWidth)}
-                  mix={[on("input", (event) => {
-                    settings.pattern.stripWidth = numberFrom(event);
-                    settings.gain = suggestedGain();
-                    if (gainSlider !== undefined) {
-                      gainSlider.value = String(settings.gain);
-                    }
-                    invalidate();
-                    handle.update();
-                  })]}
+                  mix={[
+                    ref((node) => {
+                      stripSlider = node as HTMLInputElement;
+                    }),
+                    on("input", (event) => {
+                      settings.pattern.stripWidth = numberFrom(event);
+                      retune();
+                      invalidate();
+                      handle.update();
+                    }),
+                  ]}
                 />
                 <p class="field-note">
-                  細いほど画素の混ざりは目立ちませんが、Facebook
-                  側の再エンコードで潰れやすくなります。
+                  細いほど画素の混ざりは目立ちませんが、下限は {stripFloor()}
+                  {" "}
+                  px です。Facebook は深度マップを幅 {DEPTH_REFERENCE_WIDTH}
+                  {" "}
+                  px まで縮めてから読むので、これより細いジグザグは 「3D
+                  写真を作成できませんでした」で返ってきます
+                  （出力幅を広げると下限も比例して上がります）。
                 </p>
               </div>
 
@@ -416,8 +452,8 @@ export const Simulator = island(
                   })]}
                 />
                 <p class="field-note">
-                  ストライプの継ぎ目を溶かします。合成画像から一定周期の縦エッジが消えるので、
-                  縞そのものを拒否している相手には効く見込みがあります。
+                  ストライプの継ぎ目を溶かします。受理には関係ありません——色画像は見られていません——が、
+                  傾けていない状態の見た目から一定周期の縦エッジが消えます。
                   ただし溶けた列はどの角度でも半々のままなので、その分だけ混信が残ります。
                 </p>
               </div>
@@ -434,10 +470,8 @@ export const Simulator = island(
                         defaultChecked={settings.pattern.waveform === waveform}
                         mix={[on("change", () => {
                           settings.pattern.waveform = waveform;
-                          settings.gain = suggestedGain();
-                          if (gainSlider !== undefined) {
-                            gainSlider.value = String(settings.gain);
-                          }
+                          applyStripFloor();
+                          retune();
                           invalidate();
                           handle.update();
                         })]}
@@ -448,6 +482,8 @@ export const Simulator = island(
                 </div>
                 <p class="field-note">
                   三角波が本命です。ストライプの片側で伸び、もう片側で縮むので、切れ目のないレンチキュラーになります。
+                  受け付けてもらえる最小のストライプ幅は波形ごとに違い、鋸歯が最も細く、正弦波が最も太くなります。
+                  矩形波はランプがないので幅の制限を受けませんが、伸縮せず滑るだけなので入れ替わりはほとんど起きません。
                 </p>
               </div>
 
@@ -459,24 +495,41 @@ export const Simulator = island(
                 </span>
                 <input
                   type="range"
-                  min="10"
+                  min={String(MIN_CONTRAST * 100)}
                   max="100"
-                  step="5"
+                  step={String(CONTRAST_STEP * 100)}
                   defaultValue={String(
                     Math.round(settings.pattern.contrast * 100),
                   )}
-                  mix={[on("input", (event) => {
-                    settings.pattern.contrast = numberFrom(event) / 100;
-                    settings.gain = suggestedGain();
-                    if (gainSlider !== undefined) {
-                      gainSlider.value = String(settings.gain);
-                    }
-                    invalidate();
-                    handle.update();
-                  })]}
+                  mix={[
+                    ref((node) => {
+                      contrastSlider = node as HTMLInputElement;
+                    }),
+                    on("input", (event) => {
+                      const asked = numberFrom(event) / 100;
+                      settings.pattern.contrast = acceptedContrast(asked);
+                      if (
+                        contrastSlider !== undefined &&
+                        settings.pattern.contrast !== asked
+                      ) {
+                        contrastSlider.value = String(
+                          Math.round(settings.pattern.contrast * 100),
+                        );
+                      }
+                      retune();
+                      invalidate();
+                      handle.update();
+                    }),
+                  ]}
                 />
                 <p class="field-note">
                   深度マップが使う階調の幅です。狭めると必要な視差量が増えます。
+                  {" "}
+                  {MIN_CONTRAST * 100}{" "}
+                  % を下回ると Facebook
+                  が深度として受け付けず、{REFUSED_CONTRAST * 100}{" "}
+                  %
+                  ちょうども（前後は通るのに）必ず拒否されるので、そこは飛ばします。
                 </p>
               </div>
 
@@ -487,7 +540,7 @@ export const Simulator = island(
                 <input
                   type="range"
                   min="0"
-                  max="47"
+                  max={String(period - 1)}
                   step="1"
                   defaultValue={String(settings.pattern.phase)}
                   mix={[on("input", (event) => {
@@ -514,10 +567,17 @@ export const Simulator = island(
                   defaultValue={String(settings.outputWidth)}
                   mix={[on("input", (event) => {
                     settings.outputWidth = numberFrom(event);
+                    applyStripFloor();
+                    retune();
                     invalidate();
                     handle.update();
                   })]}
                 />
+                <p class="field-note">
+                  {DEPTH_REFERENCE_WIDTH}{" "}
+                  px より広くしても縞は増えません。Facebook
+                  がそこまで縮めるので、その分ストライプを太くする必要があります。
+                </p>
               </div>
             </div>
             <label class="choice">

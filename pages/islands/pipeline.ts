@@ -7,13 +7,16 @@
  * result until something upstream of it changes.
  */
 
-import { depthGrey, depthImage, interlace } from "../lib/interlace.ts";
-import { clamp, depthProfile } from "../lib/pattern.ts";
+import { generate } from "../lib/generate.ts";
+import type { Output } from "../lib/generate.ts";
+import { clamp } from "../lib/pattern.ts";
 import type { Pattern } from "../lib/pattern.ts";
 import { applyColumnMapping, blurProfile, columnMapping } from "../lib/warp.ts";
 
-import { asImageData, fitToFrame, paint, releaseSource } from "./imaging.ts";
+import { fitToFrame, paint, releaseSource } from "./imaging.ts";
 import type { Source } from "./imaging.ts";
+
+export type { Output } from "../lib/generate.ts";
 
 /**
  * How much of the tool's strangeness to strip out before shipping.
@@ -62,28 +65,12 @@ export interface Settings {
 /** Widest output the tool will generate; past this the browser is doing megapixels for nothing. */
 export const MAX_OUTPUT_WIDTH = 2400;
 
-/** Narrowest strip the warp resolves reliably on a pixel grid. */
-export const MIN_STRIP_WIDTH = 4;
-
-/** The generated pair, once both sources are in. */
-export interface Output {
-  readonly width: number;
-  readonly height: number;
-  /** The interlaced colour image. */
-  readonly colour: ImageData;
-  /** The zigzag, as a greyscale image for the screen. */
-  readonly depth: ImageData;
-  /** The same map as one luminance byte per pixel, which is what gets written to a file. */
-  readonly grey: Uint8Array;
-}
-
 /**
  * Holds the sources, the generated pair, and the scratch buffer the view is drawn into.
  */
 export class Pipeline {
   #sources: [Source | null, Source | null] = [null, null];
   #output: Output | null = null;
-  #profile: Uint8Array | null = null;
   #frame: ImageData | null = null;
 
   /** Depth profile the last view was rendered through, so a blur is not redone every frame. */
@@ -122,7 +109,6 @@ export class Pipeline {
   /** Drops the generated pair, so the next {@link rebuild} does the work again. */
   invalidate(): void {
     this.#output = null;
-    this.#profile = null;
     this.#blurred = null;
     this.#blurRadius = -1;
   }
@@ -149,27 +135,12 @@ export class Pipeline {
       diagnostic: settings.diagnostic !== "off",
     };
 
-    const plate = fitToFrame(a.image, width, height);
-    const colour = settings.diagnostic === "both" ? plate : asImageData(
-      interlace(
-        plate.data,
-        fitToFrame(b.image, width, height).data,
-        width,
-        height,
-        pattern,
-      ),
-      width,
-      height,
+    this.#output = generate(
+      fitToFrame(a.image, width, height),
+      fitToFrame(b.image, width, height),
+      pattern,
+      settings.diagnostic === "both",
     );
-
-    this.#profile = depthProfile(width, pattern);
-    this.#output = {
-      width,
-      height,
-      colour,
-      depth: asImageData(depthImage(this.#profile, height), width, height),
-      grey: depthGrey(this.#profile, height),
-    };
     this.#frame = new ImageData(width, height);
     this.#blurred = null;
     this.#blurRadius = -1;
@@ -185,13 +156,12 @@ export class Pipeline {
    */
   renderView(canvas: HTMLCanvasElement, settings: Settings): void {
     const output = this.#output;
-    const profile = this.#profile;
     const frame = this.#frame;
-    if (output === null || profile === null || frame === null) return;
+    if (output === null || frame === null) return;
 
     const radius = Math.round(settings.depthBlur);
     if (this.#blurred === null || this.#blurRadius !== radius) {
-      this.#blurred = blurProfile(profile, radius);
+      this.#blurred = blurProfile(output.profile, radius);
       this.#blurRadius = radius;
     }
 

@@ -20,6 +20,7 @@ the very same object into static HTML for GitHub Pages.
 
 ```sh
 deno task dev     # local dev server at http://localhost:8000
+deno task gen     # write a pair of files without a browser
 deno task test    # the generator's tests
 deno task build   # generate the static site into dist/
 deno task check   # type-check, lint, format-check, test
@@ -35,13 +36,19 @@ is told to.
 
 ```
 pages/
+  cli.ts               # the generator on the command line, and its sweeps
   router.ts            # the wiring — three directories into one handler
   layout.tsx           # the HTML document shell
   transforms/page.tsx  # .tsx → a page module
   lib/
     pattern.ts         # which strip a column is, and how deep — plus the tests' subject
     interlace.ts       # two RGBA buffers → one striped buffer, and the depth image
+    generate.ts        # those two as the one function both front ends call
     warp.ts            # the viewer model: depth → a column mapping, resolved once
+    samples.ts         # the two sample pictures, drawn arithmetically
+    frame.ts           # cover-crop and resample, for where there is no canvas
+    png.ts             # a greyscale PNG writer, and a reader for the sources
+    jpeg.ts            # JPEG in and out, off the browser
     jpeg-xmp.ts        # GDepth XMP, written into a JPEG
     md5.ts             # what Extended XMP keys its chunks by
     base.ts            # the deploy prefix, computed once
@@ -60,7 +67,31 @@ Everything that decides what the output looks like is in `lib/`, as plain
 functions over typed arrays with no DOM anywhere near them — which is why
 `deno task test` can check the depth profile, the strip cut, the warp and the
 XMP writer without a browser. `islands/` is the plumbing that connects those to
-a canvas.
+a canvas, and `cli.ts` is the plumbing that connects the same functions to
+files.
+
+## The command line
+
+The page is for watching the effect; `cli.ts` is for finding out what a viewer
+accepts, and that means writing out many files that differ in one setting each.
+
+```sh
+deno task gen --strip 52
+deno task gen --sweep strip=8,16,24,32,52 --sweep feather=0,4 --out out/matrix
+```
+
+Each run writes `<name>.jpg` beside `<name>_depth.png` — the pair an uploader
+looks for — and a `manifest.json` saying what every pair was made with, with a
+`result` field left empty for what happened to it. `--sweep KEY=A,B` takes any
+option and repeats the run over its values; several sweeps make the product, and
+whatever was swept ends up in the file names.
+
+Off the browser there is no canvas, so `lib/` carries the small parts of one it
+needs: `png.ts` reads as well as writes, `frame.ts` is `drawImage`'s crop and
+resample, `samples.ts` draws the sample pair with arithmetic instead of a 2D
+context, and `jpeg.ts` is the one dependency — a baseline JPEG codec is not
+worth writing again. `generate()` itself is shared, so a file written here and a
+file saved from the page differ by their settings and nothing else.
 
 ## Adding a page
 
